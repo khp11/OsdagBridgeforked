@@ -1,9 +1,9 @@
 import sys
-import os
-
+import openseespy.opensees as ops
+from pathlib import Path
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout,
-    QRadioButton, QButtonGroup
+    QRadioButton, QButtonGroup, QLabel,QComboBox,QCheckBox
 )
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtCore import QUrl
@@ -11,28 +11,101 @@ from PySide6.QtCore import QUrl
 import xarray as xr
 import numpy as np
 import plotly.graph_objects as go
-ds = xr.open_dataset("screening_task.nc")
+
+
+
+from  .analyser import BridgeGrillageModel
+FORCE_MAP = {
+    "Fx": ("Vx_i", "Vx_j"),
+    "Fy": ("Vy_i", "Vy_j"),
+    "Fz": ("Vz_i", "Vz_j"),
+    "Mx": ("Mx_i", "Mx_j"),
+    "My": ("My_i", "My_j"),
+    "Mz": ("Mz_i", "Mz_j"),
+}
+
+
+bridge = BridgeGrillageModel()
+bridge.create_model()
+bridge.create_self_weight_load()
+bridge.create_deck_load()
+bridge.create_wearing_course_load()
+bridge.create_footpath_load()
+bridge.create_crash_barrier_load()
+bridge.create_railing_load()
+bridge.create_median_load()
+bridge.analyze()
+
+
+results = bridge.model.get_results()
+
+#results = convert_object_to_float(girder_results)
+
+
+
+LOADCASES = [
+    "girder self weight",
+    "Deck slab load",
+    "Wearing course self weight",
+    "Footpath load",
+    "Crash barrier load",
+    "Railing load",
+    "Median load",
+]
+
+ds_all = results
+def get_ds(loadcase):
+    return ds_all.sel(Loadcase=loadcase)
+
+
 
 
 # ============================================================
 # TEMP HTML (single file, overwritten)
-TEMP_HTML = os.path.abspath("temp_plot.html")
+
+TEMP_HTML = (
+    Path(__file__).resolve()
+    .parent.parent.parent      # (file → dir → parent → parent)
+    / "temp_files"
+    / "temp_plot.html"
+)
+TEMP_HTML = str(TEMP_HTML)
 
 # COMMON IMPORTS (unchanged)
 
 
 # LOAD NODES & ELEMENT CONNECTIVITY (unchanged)
-nodes = {}
-elements = {}
-exec(open("node.py").read(), nodes)
-exec(open("element.py").read(), elements)
 
-nodes = nodes["nodes"]
-members = elements["members"]
+
+# --------------------------------------------------
+# Extract all nodes from in-memory OpenSees model
+#...................................................
+# ============================================================
+# BUILD GEOMETRY ONCE (NO FILES, NO EXEC)
+# ============================================================
+
+# Node coordinates
+nodes = {
+    int(n): list(map(float, ops.nodeCoord(n)))
+    for n in ops.getNodeTags()
+}
+
+# Element connectivity
+members = {
+    int(e): list(map(int, ops.eleNodes(e)))
+    for e in ops.getEleTags()
+}
+
+
+
+
+
+
+
 
 # ============================================================
 # SFD (UNCHANGED)
-def build_figure_sfd():
+def build_figure_sfd(ds,force_key):
 
     def find_component(name):
         for c in ds["Component"].values:
@@ -40,31 +113,37 @@ def build_figure_sfd():
                 return c
         return None
 
-    Vy_i = find_component("Vy_i")
-    Vy_j = find_component("Vy_j")
-    Mz_i = find_component("Mz_i")
-    Mz_j = find_component("Mz_j")
+    comp_i_name, comp_j_name = FORCE_MAP[force_key]
+
+    comp_i = find_component(comp_i_name)
+    comp_j = find_component(comp_j_name)
+
 
     def get_force(elem, comp):
         return float(ds["forces"].sel(Element=elem, Component=comp).values)
 
     # GIRDER GROUPING
-    girders = {
-        5: list(range(13, 77, 9))+[81],
-        4: list(range(14, 78, 9))+[82],
-        3: list(range(15, 79, 9))+[83],
-        2: list(range(16, 80, 9))+[84],
-        1: list(range(17, 81, 9)) +[85],    
-    }
-    '''
-    colors = {
-        1: "red",
-        2: "orange",
-        3: "green",
-        4: "blue",
-        5: "purple"
-    }
-    '''
+    Z_TOL = 3  # decimals for grouping (important!)
+
+    node_z = {}
+    for n in ops.getNodeTags():
+        z = float(ops.nodeCoord(n)[2])
+        node_z[int(n)] = round(z, Z_TOL)
+    from collections import defaultdict
+
+    girders = defaultdict(list)
+
+    for ele in ops.getEleTags():
+        n1, n2 = map(int, ops.eleNodes(ele))
+
+        z1 = node_z[n1]
+        z2 = node_z[n2]
+
+        # only longitudinal members (same Z at both ends)
+        if z1 == z2:
+            girders[z1].append(int(ele))
+    
+  
     # BUILD GIRDER POLYLINES
     def build_polyline(elem_list, comp_i, comp_j):
         xs, ys, zs, vals, node_ids = [], [], [], [], []
@@ -76,7 +155,7 @@ def build_figure_sfd():
             xs.append(x1)
             ys.append(y1)
             zs.append(z1)
-            vals.append(get_force(e, comp_i)*10)
+            vals.append(round(get_force(e, comp_i),3))
             node_ids.append(n1)
 
         # Last end node
@@ -87,7 +166,7 @@ def build_figure_sfd():
         xs.append(x2)
         ys.append(y2)
         zs.append(z2)
-        vals.append(get_force(last_e, comp_j)*10)
+        vals.append(round(get_force(last_e, comp_j),3))
         node_ids.append(n2)
 
         return np.array(xs), np.array(ys), np.array(zs), np.array(vals), node_ids
@@ -100,14 +179,18 @@ def build_figure_sfd():
 
     for i, (gid, elems) in enumerate(girders.items()):
 
-        xs, ys, zs, vy, node_ids = build_polyline(elems, Vy_i, Vy_j)
+        xs, ys, zs, vy, node_ids = build_polyline(elems,  comp_i, comp_j)
 
         Vy = vy.astype(float)
         
     # use real Z from coordinates file
         z_base = np.mean(zs)   # or zs[0]
 
-        shear_scale = 0.1 * abs((max(xs) - min(xs)) / (max(Vy) - min(Vy)))
+        if max(Vy)-min(Vy) ==0:
+            shear_scale = 0.1 * abs((max(xs) - min(xs)) / (max(Vy) - 0))
+        
+        else:
+            shear_scale = 0.1 * abs((max(xs) - min(xs)) / (max(Vy) - min(Vy)))
 
         # ---------- BASELINE (GROUND) -------------
         fig_sfd.add_trace(go.Scatter3d(
@@ -138,7 +221,7 @@ def build_figure_sfd():
                 #f"Girder {gid}"
                 f"<br>Node {nid}"
                 f"<br>X = {x:.3f}"
-                f"<br>Vy = {v:.3f}"
+                f"<br>{force_key} = {v:.3f}"
                 for x, v, nid in zip(x_step, Vy_step, np.repeat(node_ids, 2)[1:-1])
             ],
             showlegend=False
@@ -316,7 +399,11 @@ def build_figure_sfd():
 # ============================================================
 #  BMD 
 
-def build_figure_bmd():
+
+
+
+
+def build_figure_bmd(ds,force_key):
     # LOAD INTERNAL FORCES (NETCDF)
     def find_component(name):
         for c in ds["Component"].values:
@@ -324,22 +411,33 @@ def build_figure_bmd():
                 return c
         return None
 
-    Vy_i = find_component("Vy_i")
-    Vy_j = find_component("Vy_j")
-    Mz_i = find_component("Mz_i")
-    Mz_j = find_component("Mz_j")
+    comp_i_name, comp_j_name = FORCE_MAP[force_key]
+    comp_i = find_component(comp_i_name)
+    comp_j = find_component(comp_j_name)
 
     def get_force(elem, comp):
         return float(ds["forces"].sel(Element=elem, Component=comp).values)
 
-    # GIRDER GROUPING
-    girders = {
-        5: list(range(13, 77, 9))+[81],
-        4: list(range(14, 78, 9))+[82],
-        3: list(range(15, 79, 9))+[83],
-        2: list(range(16, 80, 9))+[84],
-        1: list(range(17, 81, 9)) +[85],    
-    }
+    Z_TOL = 3  # decimals for grouping (important!)
+
+    node_z = {}
+    for n in ops.getNodeTags():
+        z = float(ops.nodeCoord(n)[2])
+        node_z[int(n)] = round(z, Z_TOL)
+    from collections import defaultdict
+
+    girders = defaultdict(list)
+
+    for ele in ops.getEleTags():
+        n1, n2 = map(int, ops.eleNodes(ele))
+
+        z1 = node_z[n1]
+        z2 = node_z[n2]
+
+        # only longitudinal members (same Z at both ends)
+        if z1 == z2:
+            girders[z1].append(int(ele))
+
 
     # BUILD GIRDER POLYLINES
     def build_polyline(elem_list, comp_i, comp_j):
@@ -351,9 +449,9 @@ def build_figure_bmd():
             xs.append(x1)
             ys.append(y1)
             zs.append(z1)
-            vals.append(get_force(e, comp_i))
+            vals.append(round(get_force(e, comp_i),3))
             node_ids.append(n1)
-
+        print(f"Element list: {elem_list}")
         # Last end node
         last_e = elem_list[-1]
         n1, n2 = members[last_e]
@@ -362,7 +460,7 @@ def build_figure_bmd():
         xs.append(x2)
         ys.append(y2)
         zs.append(z2)
-        vals.append(get_force(last_e, comp_j))
+        vals.append(round(get_force(last_e, comp_j),3))
         node_ids.append(n2)
 
         return np.array(xs), np.array(ys), np.array(zs), np.array(vals), node_ids
@@ -381,14 +479,16 @@ def build_figure_bmd():
     #factormz= abs(diffmzfull/diffxfull)*0.2
     '''
     for gid, elems in girders.items():
-        xs, ys, zs, mz, node_ids = build_polyline(elems, Mz_i, Mz_j)
+        xs, ys, zs, mz, node_ids = build_polyline(elems, comp_i, comp_j)
         if max(mz)-min(mz) ==0:
             factormz = 0.1 * abs((max(xs) - min(xs)) / (max(mz) - 0))
+        
+        
         else:
             factormz = 0.1 * abs((max(xs) - min(xs)) / (max(mz) - min(mz)))    
         y_plot = mz*factormz #* 0.05  # moment scale
         hover_text = [
-            f"Node {nid}<br>X = {x:.3f}<br>Mz = {v:.3f}<br>Z = {z:.3f}"
+            f"Node {nid}<br>X = {x:.3f}<br>{force_key} = {v:.3f}<br>Z = {z:.3f}"
             for nid, x, v,z in zip(node_ids, xs, mz,zs)
         ]
 
@@ -664,7 +764,7 @@ def build_figure_bmd():
 
 # ============================================================
 # BMD CONTOUR
-def build_figure_bmd_contour():
+def build_figure_bmd_contour(ds,force_key):
 
     def find_component(name):
         for c in ds["Component"].values:
@@ -672,22 +772,35 @@ def build_figure_bmd_contour():
                 return c
         return None
 
-    Mz_i = find_component("Mz_i")
-    Mz_j = find_component("Mz_j")
-
+    comp_i_name, comp_j_name = FORCE_MAP[force_key]
+    comp_i = find_component(comp_i_name)
+    comp_j = find_component(comp_j_name)
     def get_force(elem, comp):
         return float(ds["forces"].sel(Element=elem, Component=comp).values)
 
     # -------------------------------------------------------------
     # GIRDER GROUPING
     # -------------------------------------------------------------
-    girders = {
-        5: list(range(13, 77, 9)) + [81],
-        4: list(range(14, 78, 9)) + [82],
-        3: list(range(15, 79, 9)) + [83],
-        2: list(range(16, 80, 9)) + [84],
-        1: list(range(17, 81, 9)) + [85],
-    }
+    Z_TOL = 3  # decimals for grouping (important!)
+
+    node_z = {}
+    for n in ops.getNodeTags():
+        z = float(ops.nodeCoord(n)[2])
+        node_z[int(n)] = round(z, Z_TOL)
+    from collections import defaultdict
+
+    girders = defaultdict(list)
+
+    for ele in ops.getEleTags():
+        n1, n2 = map(int, ops.eleNodes(ele))
+
+        z1 = node_z[n1]
+        z2 = node_z[n2]
+
+        # only longitudinal members (same Z at both ends)
+        if z1 == z2:
+            girders[z1].append(int(ele))
+    
 
     # -------------------------------------------------------------
     # BUILD GIRDER POLYLINE
@@ -702,7 +815,7 @@ def build_figure_bmd_contour():
             xs.append(x1)
             ys.append(y1)
             zs.append(z1)
-            mz.append(get_force(e, comp_i))
+            mz.append(round(get_force(e, comp_i),3))
             node_ids.append(n1)
 
         last_e = elem_list[-1]
@@ -712,7 +825,7 @@ def build_figure_bmd_contour():
         xs.append(x2)
         ys.append(y2)
         zs.append(z2)
-        mz.append(get_force(last_e, comp_j))
+        mz.append(round(get_force(last_e, comp_j),3))
         node_ids.append(n2)
 
         return np.array(xs), np.array(ys), np.array(zs), np.array(mz), node_ids
@@ -720,7 +833,7 @@ def build_figure_bmd_contour():
 
     xfull, mzfull = [], []
     for elems in girders.values():
-        xs, ys, zs, mz, _ = build_polyline(elems, Mz_i, Mz_j)
+        xs, ys, zs, mz, _ = build_polyline(elems, comp_i, comp_j)
         xfull.extend(xs)
         mzfull.extend(mz)
 
@@ -734,9 +847,10 @@ def build_figure_bmd_contour():
     fig = go.Figure()
 
     for gid, elems in girders.items():
-        xs, ys, zs, mz, node_ids = build_polyline(elems, Mz_i, Mz_j)
+        xs, ys, zs, mz, node_ids = build_polyline(elems, comp_i, comp_j)
         if max(mz)-min(mz) ==0:
             moment_scale = 0.1 * abs((max(xs) - min(xs)) / (max(mz) - 0))
+        
         else:
             moment_scale = 0.1 * abs((max(xs) - min(xs)) / (max(mz) - min(mz)))    
         y_plot = mz * moment_scale
@@ -757,7 +871,7 @@ def build_figure_bmd_contour():
             showlegend=False,
             hoverinfo="text",
             text=[
-                f"Node {nid}<br>X={x:.3f}<br>Mz={v:.3f}"
+                f"Node {nid}<br>X={x:.3f}<br>{force_key}={v:.3f}"
                 for nid, x, v in zip(node_ids, xs, mz)
             ]
         ))
@@ -943,7 +1057,7 @@ def build_figure_bmd_contour():
 
 # ============================================================
 # ====================== QT WIDGET
-# ============================================================
+'''
 class PlotWidget(QWidget):
 
     def __init__(self):
@@ -986,7 +1100,7 @@ class PlotWidget(QWidget):
             build_figure_bmd_contour()
 
         self.web.load(QUrl.fromLocalFile(TEMP_HTML))
-
+'''
 
 # ====================== QT WIDGET
 # ============================================================
@@ -994,49 +1108,82 @@ class PlotWidget(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Plate Girder Plots")
+        self.setWindowTitle("Plate Girder Results")
 
         layout = QVBoxLayout(self)
 
         top = QHBoxLayout()
-        self.sfd = QRadioButton("SFD")
-        self.bmd = QRadioButton("BMD")
-        self.contour = QRadioButton("BMD Contour")
 
-        self.sfd.setChecked(True)
+        # ---------- LOADCASE ----------
+        top.addWidget(QLabel("Load case:"))
 
-        group = QButtonGroup(self)
-        group.setExclusive(True)
-        group.addButton(self.sfd)
-        group.addButton(self.bmd)
-        group.addButton(self.contour)
-        group.buttonClicked.connect(self.update_plot)
+        self.combo = QComboBox()
+        self.combo.addItems(LOADCASES)
+        self.combo.currentTextChanged.connect(self.update_plot)
+        top.addWidget(self.combo)
 
-        top.addWidget(self.sfd)
-        top.addWidget(self.bmd)
+        # ---------- FORCE ----------
+        top.addWidget(QLabel("Force:"))
+
+        self.force_combo = QComboBox()
+        self.force_combo.addItems(list(FORCE_MAP.keys()))
+        self.force_combo.setCurrentText("Fy")
+        self.force_combo.currentTextChanged.connect(self.update_plot)
+        top.addWidget(self.force_combo)
+
+        # ---------- CONTOUR ----------
+        self.contour = QCheckBox("Contour (Moments only)")
+        self.contour.stateChanged.connect(self.update_plot)
         top.addWidget(self.contour)
+
+        top.addStretch()
 
         self.web = QWebEngineView()
 
         layout.addLayout(top)
         layout.addWidget(self.web)
 
-        self.update_plot(self.sfd)
+        self.update_plot()
 
-    def update_plot(self, btn):
-        if btn == self.sfd:
-            build_figure_sfd()
-        elif btn == self.bmd:
-            build_figure_bmd()
+
+
+    def update_plot(self):
+        loadcase = self.combo.currentText()
+        force_key = self.force_combo.currentText()
+
+        ds = get_ds(loadcase)
+
+        # -------- FORCE TYPE --------
+        is_force  = force_key.startswith("F")   # Fx, Fy, Fz
+        is_moment = force_key.startswith("M")   # Mx, My, Mz
+
+        # -------- UI LOGIC --------
+        if is_force:
+            # Forces → SFD, contour disabled
+            self.contour.blockSignals(True)
+            self.contour.setChecked(False)
+            self.contour.setEnabled(False)
+            self.contour.blockSignals(False)
+
+            build_figure_sfd(ds, force_key)
+
+        elif is_moment:
+            # Moments → BMD (+ optional contour)
+            self.contour.setEnabled(True)
+
+            if self.contour.isChecked():
+                build_figure_bmd_contour(ds, force_key)
+            else:
+                build_figure_bmd(ds, force_key)
+
         else:
-            build_figure_bmd_contour()
+            raise ValueError(f"Unsupported force: {force_key}")
 
+        # -------- UPDATE VIEW --------
         self.web.load(QUrl.fromLocalFile(TEMP_HTML))
 
 
-# ============================================================
 # ======================= MAIN
-# ============================================================
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     w = PlotWidget()
