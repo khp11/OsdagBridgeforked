@@ -62,13 +62,30 @@ def get_ds(loadcase):
 
 # ============================================================
 # TEMP HTML (single file, overwritten)
-
+'''
 TEMP_HTML = (
     Path(__file__).resolve()
     .parent.parent.parent      # (file → dir → parent → parent)
     / "temp_files"
     / "temp_plot.html"
 )
+TEMP_HTML = str(TEMP_HTML)
+'''
+
+# Base directory (same as your logic)
+BASE_DIR = (
+    Path(__file__).resolve()
+    .parent.parent.parent
+)
+
+# Ensure temp_files directory exists
+TEMP_DIR = BASE_DIR / "temp_files"
+TEMP_DIR.mkdir(parents=True, exist_ok=True)
+
+# Final HTML file path
+TEMP_HTML = TEMP_DIR / "temp_plot.html"
+
+# If you really need string
 TEMP_HTML = str(TEMP_HTML)
 
 # COMMON IMPORTS (unchanged)
