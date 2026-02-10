@@ -8,7 +8,6 @@ from PySide6.QtWidgets import (
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtCore import QUrl
 
-import xarray as xr
 import numpy as np
 import plotly.graph_objects as go
 
@@ -1139,14 +1138,25 @@ class PlotWidget(QWidget):
         self.combo.currentTextChanged.connect(self.update_plot)
         top.addWidget(self.combo)
 
-        # ---------- FORCE ----------
-        top.addWidget(QLabel("Force:"))
+        # ---------- FORCE CHECKBOXES ----------
+        top.addWidget(QLabel("Result:"))
 
-        self.force_combo = QComboBox()
-        self.force_combo.addItems(list(FORCE_MAP.keys()))
-        self.force_combo.setCurrentText("Fy")
-        self.force_combo.currentTextChanged.connect(self.update_plot)
-        top.addWidget(self.force_combo)
+        self.force_group = QButtonGroup(self)
+        self.force_group.setExclusive(True)  # 🔥 only one selectable
+
+        self.force_checkboxes = {}
+
+        for key in FORCE_MAP.keys():
+            cb = QCheckBox(key)
+            self.force_group.addButton(cb)
+            top.addWidget(cb)
+            self.force_checkboxes[key] = cb
+
+        # Default selection
+        self.force_checkboxes["Fy"].setChecked(True)
+
+        self.force_group.buttonClicked.connect(self.update_plot)
+
 
         # ---------- CONTOUR ----------
         self.contour = QCheckBox("Contour (Moments only)")
@@ -1166,7 +1176,15 @@ class PlotWidget(QWidget):
 
     def update_plot(self):
         loadcase = self.combo.currentText()
-        force_key = self.force_combo.currentText()
+        # get selected checkbox
+        force_key = None
+        for key, cb in self.force_checkboxes.items():
+            if cb.isChecked():
+                force_key = key
+                break
+
+        if force_key is None:
+            return
 
         ds = get_ds(loadcase)
 
