@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QLabel,
     QLineEdit,
-    QGroupBox,
+    QFrame,
     QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
@@ -23,106 +23,125 @@ from osdagbridge.desktop.ui.utils.styled_scroll_area import StyledScrollArea
 class SteelDesignDetailsTab(QWidget):
 
     def __init__(self, parent=None):
-        self.member_fields = {}
-        self.dim_fields = {}
-        self.shear_fields = {}
-        self.section_fields = {}
+        self.member_fields    = {}
+        self.dim_fields       = {}
+        self.shear_fields     = {}
+        self.section_fields   = {}
         self.stiffener_fields = {}
 
         super().__init__(parent)
+
+        # ── white background on the widget itself (same as LayoutTab / MedianTab) ──
+        self.setStyleSheet("background-color: white;")
 
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
+        # ── StyledScrollArea from utils ──────────────────────────────────────
         scroll_area = StyledScrollArea()
+
         container = QWidget()
+        container.setStyleSheet("background-color: white;")
+
+        # Margins match LayoutTab / MedianTab: (18, 6, 18, 12)
         container_layout = QVBoxLayout(container)
-        container_layout.setContentsMargins(8, 8, 8, 8)
-        container_layout.setSpacing(8)
+        container_layout.setContentsMargins(18, 6, 18, 12)
+        container_layout.setSpacing(16)
 
-        # ── TOP ROW: Member info (left) + CAD placeholder (right) ──────────
-        top_layout = QHBoxLayout()
-        top_layout.setSpacing(8)
-        top_layout.setContentsMargins(0, 0, 0, 0)
-
-        member_group = self._create_member_info_group()
-        top_layout.addWidget(member_group, 2)
-
-        self.cad_placeholder = QLabel()
-        self.cad_placeholder.setFixedSize(300, 160)
-        self.cad_placeholder.setAlignment(Qt.AlignCenter)
-        self.cad_placeholder.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        self.cad_placeholder.setStyleSheet("""
-            QLabel {
-                border: 1px solid #CFCFCF;
-                background-color: #F5F5F5;
-            }
-        """)
-        top_layout.addWidget(self.cad_placeholder, 1)
-        container_layout.addLayout(top_layout)
+        # ── TOP ROW: Member Info (left) + CAD placeholder (right) ─────────
+        top_row = QHBoxLayout()
+        top_row.setSpacing(20)
+        top_row.setContentsMargins(0, 0, 0, 0)
+        top_row.addWidget(self._build_member_section(), 2)
+        top_row.addWidget(self._build_top_cad_placeholder(), 0)   # fixed, no stretch
+        container_layout.addLayout(top_row)
 
         # ── BODY: Dimensional + Shear (left) | Section Properties (right) ──
-        body_layout = QHBoxLayout()
-        body_layout.setSpacing(8)
-        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_row = QHBoxLayout()
+        body_row.setSpacing(20)
+        body_row.setContentsMargins(0, 0, 0, 0)
 
-        left_side = QVBoxLayout()
-        left_side.setSpacing(8)
-        left_side.setContentsMargins(0, 0, 0, 0)
-        left_side.addWidget(self._create_dimensional_group())
-        left_side.addWidget(self._create_shear_group())
-        left_side.addStretch()
+        left_col = QVBoxLayout()
+        left_col.setSpacing(16)
+        left_col.setContentsMargins(0, 0, 0, 0)
+        left_col.addWidget(self._build_dimensional_section())
+        left_col.addWidget(self._build_shear_section())
+        left_col.addStretch()
 
-        right_side = QVBoxLayout()
-        right_side.setSpacing(8)
-        right_side.setContentsMargins(0, 0, 0, 0)
-        right_side.addWidget(self._create_section_properties_group())
-        right_side.addStretch()
+        right_col = QVBoxLayout()
+        right_col.setSpacing(16)
+        right_col.setContentsMargins(0, 0, 0, 0)
+        right_col.addWidget(self._build_section_properties_section())
+        right_col.addStretch()
 
-        body_layout.addLayout(left_side, 2)
-        body_layout.addLayout(right_side, 1)
-        container_layout.addLayout(body_layout)
+        body_row.addLayout(left_col, 2)
+        body_row.addLayout(right_col, 1)
+        container_layout.addLayout(body_row)
 
-        # ── STIFFENER TABLE ─────────────────────────────────────────────────
-        container_layout.addWidget(self._create_stiffener_group())
+        # ── STIFFENER TABLE ──────────────────────────────────────────────────
+        container_layout.addWidget(self._build_stiffener_section())
 
-        # ── BOTTOM CAD placeholder ──────────────────────────────────────────
-        container_layout.addWidget(self._create_bottom_cad_section())
+        # ── BOTTOM CAD placeholder ───────────────────────────────────────────
+        container_layout.addWidget(self._build_bottom_cad_section())
 
         container_layout.addStretch()
 
         scroll_area.setWidget(container)
         main_layout.addWidget(scroll_area)
 
-    # ── HELPERS ─────────────────────────────────────────────────────────────
+    # ── LAYOUT HELPERS (exact pattern from LayoutTab / MedianTab) ───────────
 
-    def _apply_groupbox_style(self, group):
-        group.setStyleSheet("""
-            QGroupBox {
-                font-weight: bold;
-                font-size: 11px;
-                color: #333;
-                border: 1px solid #90AF13;
-                border-radius: 4px;
-                margin-top: 6px;
-                padding-top: 10px;
+    def _section_card(self, title):
+        """
+        Matches TypicalSectionDetailsTab._create_section_card exactly:
+        QFrame#sectionCard, border: none, white bg, bold title.
+        Returns (card_widget, content_layout).
+        """
+        card = QFrame()
+        card.setObjectName("sectionCard")
+        card.setStyleSheet("""
+            QFrame#sectionCard {
                 background-color: white;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                subcontrol-position: top left;
-                left: 8px;
-                padding: 0 4px;
-                background-color: white;
-            }
-            QLabel {
-                color: #222222;
-                font-size: 10px;
+                border: none;
             }
         """)
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(0, 0, 0, 0)
+        card_layout.setSpacing(10)
+
+        title_label = QLabel(title)
+        title_label.setStyleSheet("font-size: 12px; font-weight: bold; color: #000;")
+        card_layout.addWidget(title_label)
+
+        return card, card_layout
+
+    def _row_label(self, text):
+        """
+        Matches LayoutTab _label():
+        font-size 11px, color #000, minWidth 180.
+        """
+        lbl = QLabel(text)
+        lbl.setStyleSheet("font-size: 11px; color: #000;")
+        lbl.setMinimumWidth(180)
+        return lbl
+
+    def _make_grid(self):
+        """
+        Matches LayoutTab grid:
+        hSpacing 24, vSpacing 10, no margins.
+        """
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(24)
+        grid.setVerticalSpacing(10)
+        grid.setColumnStretch(0, 0)
+        grid.setColumnStretch(1, 0)   # field is fixed width
+        grid.setColumnStretch(2, 1)   # filler so fields stay left
+        return grid
 
     def _readonly_field(self):
+        """Fixed-size readonly field — dimensions unchanged from correct base code."""
         field = QLineEdit()
         field.setReadOnly(True)
         field.setFixedWidth(150)
@@ -131,21 +150,16 @@ class SteelDesignDetailsTab(QWidget):
         apply_field_style(field)
         return field
 
-    def _tight_grid(self, group):
-        """Return a QGridLayout attached to group with tight spacing."""
-        layout = QGridLayout(group)
-        layout.setContentsMargins(6, 4, 6, 4)
-        layout.setVerticalSpacing(3)
-        layout.setHorizontalSpacing(8)
-        return layout
+    def _add_row(self, grid, row, text, widget):
+        grid.addWidget(self._row_label(text), row, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        grid.addWidget(widget,                row, 1, Qt.AlignLeft | Qt.AlignVCenter)
+        return row + 1
 
-    # ── MEMBER INFO ──────────────────────────────────────────────────────────
+    # ── SECTIONS ─────────────────────────────────────────────────────────────
 
-    def _create_member_info_group(self):
-        group = QGroupBox()
-        self._apply_groupbox_style(group)
-
-        layout = self._tight_grid(group)
+    def _build_member_section(self):
+        card, layout = self._section_card("Member Info:")
+        grid = self._make_grid()
 
         self.member_combo = NoScrollComboBox()
         apply_field_style(self.member_combo)
@@ -156,57 +170,50 @@ class SteelDesignDetailsTab(QWidget):
         self.grade_field = self._readonly_field()
         self.type_field  = self._readonly_field()
 
-        layout.addWidget(QLabel("Member ID"),          0, 0)
-        layout.addWidget(self.member_combo,             0, 1)
-        layout.addWidget(QLabel("Grade of Material:"), 1, 0)
-        layout.addWidget(self.grade_field,              1, 1)
-        layout.addWidget(QLabel("Type:"),               2, 0)
-        layout.addWidget(self.type_field,               2, 1)
+        r = 0
+        r = self._add_row(grid, r, "Member ID:",          self.member_combo)
+        r = self._add_row(grid, r, "Grade of Material:",  self.grade_field)
+        r = self._add_row(grid, r, "Type:",               self.type_field)
 
-        self.member_fields["member_id"]       = self.member_combo
+        layout.addLayout(grid)
+
+        self.member_fields["member_id"]         = self.member_combo
         self.member_fields["grade_of_material"] = self.grade_field
-        self.member_fields["section_type"]    = self.type_field
+        self.member_fields["section_type"]      = self.type_field
 
-        return group
+        return card
 
-    # ── DIMENSIONAL ──────────────────────────────────────────────────────────
-
-    def _create_dimensional_group(self):
-        group = QGroupBox("Dimensional Details")
-        self._apply_groupbox_style(group)
-
-        layout = self._tight_grid(group)
+    def _build_dimensional_section(self):
+        card, layout = self._section_card("Dimensional Details:")
+        grid = self._make_grid()
 
         labels = {
-            "section_designation":    "Section Designation",
-            "section_class":          "Section Class",
-            "total_depth":            "Total Depth (mm)",
-            "web_thickness":          "Web Thickness (mm)",
-            "top_flange_width":       "Top Flange Width (mm)",
-            "top_flange_thickness":   "Top Flange Thickness (mm)",
-            "bottom_flange_width":    "Bottom Flange Width (mm)",
-            "bottom_flange_thickness":"Bottom Flange Thickness (mm)",
-            "torsional_restraint":    "Torsional Restraint",
-            "warping_restraint":      "Warping Restraint",
-            "web_type":               "Web Type",
-            "effective_slab_width":   "Effective Width of Slab (mm)",
+            "section_designation":     "Section Designation",
+            "section_class":           "Section Class",
+            "total_depth":             "Total Depth (mm)",
+            "web_thickness":           "Web Thickness (mm)",
+            "top_flange_width":        "Top Flange Width (mm)",
+            "top_flange_thickness":    "Top Flange Thickness (mm)",
+            "bottom_flange_width":     "Bottom Flange Width (mm)",
+            "bottom_flange_thickness": "Bottom Flange Thickness (mm)",
+            "torsional_restraint":     "Torsional Restraint",
+            "warping_restraint":       "Warping Restraint",
+            "web_type":                "Web Type",
+            "effective_slab_width":    "Effective Width of Slab (mm)",
         }
 
-        for row, (key, text) in enumerate(labels.items()):
-            layout.addWidget(QLabel(text), row, 0)
+        r = 0
+        for key, text in labels.items():
             field = self._readonly_field()
-            layout.addWidget(field, row, 1)
+            r = self._add_row(grid, r, text, field)
             self.dim_fields[key] = field
 
-        return group
+        layout.addLayout(grid)
+        return card
 
-    # ── SHEAR ────────────────────────────────────────────────────────────────
-
-    def _create_shear_group(self):
-        group = QGroupBox("Shear Connector Details")
-        self._apply_groupbox_style(group)
-
-        layout = self._tight_grid(group)
+    def _build_shear_section(self):
+        card, layout = self._section_card("Shear Connector Details:")
+        grid = self._make_grid()
 
         labels = {
             "shear_material":             "Material",
@@ -217,54 +224,81 @@ class SteelDesignDetailsTab(QWidget):
             "shear_longitudinal_spacing": "Average Longitudinal Spacing (mm)",
         }
 
-        for row, (key, text) in enumerate(labels.items()):
-            layout.addWidget(QLabel(text), row, 0)
+        r = 0
+        for key, text in labels.items():
             field = self._readonly_field()
-            layout.addWidget(field, row, 1)
+            r = self._add_row(grid, r, text, field)
             self.shear_fields[key] = field
 
-        return group
+        layout.addLayout(grid)
+        return card
 
-    # ── SECTION PROPERTIES ───────────────────────────────────────────────────
-
-    def _create_section_properties_group(self):
-        group = QGroupBox("Section Properties")
-        self._apply_groupbox_style(group)
-
-        layout = self._tight_grid(group)
+    def _build_section_properties_section(self):
+        card, layout = self._section_card("Section Properties:")
+        grid = self._make_grid()
 
         labels = {
             "mass":  "Mass, M (Kg/m)",
-            "area":  "Sectional Area (cm²)",
-            "iz":    "2nd Moment of Area, Iz (cm⁴)",
-            "iv":    "2nd Moment of Area, Iv (cm⁴)",
+            "area":  "Sectional Area (cm\u00b2)",
+            "iz":    "2nd Moment of Area, Iz (cm\u2074)",
+            "iv":    "2nd Moment of Area, Iv (cm\u2074)",
             "rz":    "Radius of Gyration, rz (cm)",
             "rv":    "Radius of Gyration, rv (cm)",
-            "zz":    "Elastic Modulus, Zz (cm³)",
-            "zv":    "Elastic Modulus, Zv (cm³)",
-            "zuz":   "Plastic Modulus, Zuz (cm³)",
-            "zuv":   "Plastic Modulus, Zuv (cm³)",
-            "it":    "Torsion Constant, It (cm⁴)",
-            "iw":    "Warping Constant, Iw (cm⁶)",
+            "zz":    "Elastic Modulus, Zz (cm\u00b3)",
+            "zv":    "Elastic Modulus, Zv (cm\u00b3)",
+            "zuz":   "Plastic Modulus, Zuz (cm\u00b3)",
+            "zuv":   "Plastic Modulus, Zuv (cm\u00b3)",
+            "it":    "Torsion Constant, It (cm\u2074)",
+            "iw":    "Warping Constant, Iw (cm\u2076)",
         }
 
-        for row, (key, text) in enumerate(labels.items()):
-            layout.addWidget(QLabel(text), row, 0)
+        r = 0
+        for key, text in labels.items():
             field = self._readonly_field()
-            layout.addWidget(field, row, 1)
+            r = self._add_row(grid, r, text, field)
             self.section_fields[key] = field
 
-        return group
+        layout.addLayout(grid)
+        return card
 
-    # ── STIFFENER TABLE ──────────────────────────────────────────────────────
+    # ── CAD PLACEHOLDERS (fixed sizes unchanged from correct base code) ───────
 
-    def _create_stiffener_group(self):
-        group = QGroupBox("Stiffener Details")
-        self._apply_groupbox_style(group)
+    def _build_top_cad_placeholder(self):
+        self.cad_placeholder = QLabel()
+        self.cad_placeholder.setFixedSize(300, 160)
+        self.cad_placeholder.setAlignment(Qt.AlignCenter)
+        self.cad_placeholder.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.cad_placeholder.setStyleSheet("""
+            QLabel {
+                border: 1px solid #CFCFCF;
+                background-color: #F5F5F5;
+            }
+        """)
+        return self.cad_placeholder
 
-        layout = QVBoxLayout(group)
-        layout.setContentsMargins(6, 4, 6, 4)
-        layout.setSpacing(0)
+    def _build_bottom_cad_section(self):
+        wrapper = QWidget()
+        wrapper.setStyleSheet("background-color: white; border: none;")
+        layout = QVBoxLayout(wrapper)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        bottom_cad = QLabel()
+        bottom_cad.setFixedSize(400, 200)
+        bottom_cad.setAlignment(Qt.AlignCenter)
+        bottom_cad.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        bottom_cad.setStyleSheet("""
+            QLabel {
+                border: 1px solid #CFCFCF;
+                background-color: #F5F5F5;
+            }
+        """)
+        layout.addWidget(bottom_cad, alignment=Qt.AlignCenter)
+        return wrapper
+
+    # ── STIFFENER TABLE (unchanged from correct base code) ────────────────────
+
+    def _build_stiffener_section(self):
+        card, layout = self._section_card("Stiffener Details:")
 
         self.stiffener_table = QTableWidget()
         self.stiffener_table.setRowCount(3)
@@ -273,8 +307,7 @@ class SteelDesignDetailsTab(QWidget):
             "Type", "Grade of Material", "Thickness (mm)", "Width (mm)", "Spacing (mm)"
         ])
 
-        row_names = ["Intermediate", "Longitudinal", "Bearing"]
-        for row, name in enumerate(row_names):
+        for row, name in enumerate(["Intermediate", "Longitudinal", "Bearing"]):
             item = QTableWidgetItem(name)
             item.setFlags(Qt.ItemIsEnabled)
             self.stiffener_table.setItem(row, 0, item)
@@ -290,7 +323,6 @@ class SteelDesignDetailsTab(QWidget):
         self.stiffener_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.stiffener_table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
-        # Fit table height exactly to content (header + 3 rows)
         header_h = self.stiffener_table.horizontalHeader().height()
         row_h    = self.stiffener_table.verticalHeader().defaultSectionSize()
         self.stiffener_table.setFixedHeight(header_h + row_h * 3 + 2)
@@ -315,40 +347,9 @@ class SteelDesignDetailsTab(QWidget):
         """)
 
         layout.addWidget(self.stiffener_table)
-        return group
+        return card
 
-    # ── BOTTOM CAD PLACEHOLDER ───────────────────────────────────────────────
-
-    def _create_bottom_cad_section(self):
-        group = QGroupBox()
-        group.setStyleSheet("""
-            QGroupBox {
-                border: 0px solid #CFCFCF;
-                border-radius: 0px;
-                background-color: white;
-                margin-top: 0px;
-                padding: 4px;
-            }
-        """)
-        layout = QVBoxLayout(group)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(0)
-
-        bottom_cad = QLabel()
-        bottom_cad.setFixedSize(400, 200)
-        bottom_cad.setAlignment(Qt.AlignCenter)
-        bottom_cad.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        bottom_cad.setStyleSheet("""
-            QLabel {
-                border: 1px solid #CFCFCF;
-                background-color: #F5F5F5;
-            }
-        """)
-
-        layout.addWidget(bottom_cad, alignment=Qt.AlignCenter)
-        return group
-
-    # ── LOAD DATA  ──────────────────────────────────────────
+    # ── LOAD DATA (unchanged) ─────────────────────────────────────────────────
 
     def load_data(self, cad_state: dict):
         if not cad_state:
