@@ -20,7 +20,7 @@ class SteelDesign(QDialog):
         super().__init__(parent)
 
         self.setWindowTitle("Steel Design")
-        self.resize(700, 800)
+        self.resize(690, 800)
 
         main_layout = QVBoxLayout()
         self.setLayout(main_layout)

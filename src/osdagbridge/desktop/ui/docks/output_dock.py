@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy,
-    QPushButton, QGroupBox, QCheckBox, QScrollArea, QFrame, QComboBox
+    QPushButton, QGroupBox, QCheckBox, QScrollArea, QFrame, QComboBox,QLineEdit
 )
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QIcon
@@ -82,6 +82,7 @@ def apply_field_style(widget):
             }
         """)
 
+
 class OutputDock(QWidget):
     """Output dock with collapsible design controls and scrollable layout."""
 
@@ -91,6 +92,10 @@ class OutputDock(QWidget):
         self.setStyleSheet("background: transparent;")
         self.init_ui()
 
+    def open_steel_design(self):
+        if hasattr(self.parent, "open_steel_design"):
+            self.parent.open_steel_design()
+    
     def toggle_output_dock(self):
         parent = self.parent
         if hasattr(parent, 'toggle_animate'):
@@ -210,6 +215,24 @@ class OutputDock(QWidget):
                 padding: 0 4px;
                 background-color: white;
             }
+            QCheckBox {
+        font-size: 11px;
+        color: #333;
+        spacing: 6px;
+    }
+
+            QCheckBox::indicator {
+                width: 16px;
+                height: 16px;
+                border: 1px solid #444;
+                background-color: white;
+            }
+
+            QCheckBox::indicator:checked {
+                image: url(:/vectors/checked.svg);
+                background-color: #90AF13;
+                border: 1px solid #90AF13;
+           
             """
         )
         results_layout = QVBoxLayout(results_group)
@@ -385,7 +408,7 @@ class OutputDock(QWidget):
                 background-color: #7a9a12;
             }
         """)
-        modify_geo_btn.clicked.connect(self.show_additional_inputs)
+        modify_geo_btn.clicked.connect(self.open_steel_design)
         add_geo_row.addWidget(modify_geo_btn, 1)
         super_body_layout.addLayout(add_geo_row)
 

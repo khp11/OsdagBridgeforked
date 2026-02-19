@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (
     QMenuBar, QSplitter, QSizePolicy, QPushButton, QScrollArea, QFrame,
 )
 from PySide6.QtSvgWidgets import QSvgWidget
-from PySide6.QtCore import Qt, QFile, QTextStream, Signal
+from PySide6.QtCore import Qt, QFile, QTextStream, Signal,QTimer
 from PySide6.QtGui import QIcon, QAction, QKeySequence
 
 from osdagbridge.desktop.ui.docks.input_dock import InputDock
@@ -15,6 +15,8 @@ from osdagbridge.desktop.ui.dialogs.additional_inputs import AdditionalInputs
 
 from osdagbridge.core.bridge_types.plate_girder.ui_fields import FrontendData
 from osdagbridge.core.utils.common import *
+from osdagbridge.desktop.ui.dialogs.steel_design import SteelDesign
+
 
 class CustomWindow(QWidget):
     def __init__(self, title: str, backend: object, parent=None):
@@ -270,6 +272,9 @@ class CustomWindow(QWidget):
         if hasattr(self, 'cad_comp_widget'):
             self.cad_comp_widget.update_from_osdag_inputs(self.cad_state)
 
+    def open_steel_design(self):
+        dialog = SteelDesign(self)
+        dialog.exec()
 
             
     def update_cad_from_inputs(self):
