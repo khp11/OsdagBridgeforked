@@ -240,16 +240,16 @@ class SteelDesignDetailsTab(QWidget):
         labels = {
             "mass":  "Mass, M (Kg/m)",
             "area":  "Sectional Area (cm\u00b2)",
-            "iz":    "2nd Moment of Area, Iz (cm\u2074)",
-            "iv":    "2nd Moment of Area, Iv (cm\u2074)",
-            "rz":    "Radius of Gyration, rz (cm)",
-            "rv":    "Radius of Gyration, rv (cm)",
-            "zz":    "Elastic Modulus, Zz (cm\u00b3)",
-            "zv":    "Elastic Modulus, Zv (cm\u00b3)",
-            "zuz":   "Plastic Modulus, Zuz (cm\u00b3)",
-            "zuv":   "Plastic Modulus, Zuv (cm\u00b3)",
-            "it":    "Torsion Constant, It (cm\u2074)",
-            "iw":    "Warping Constant, Iw (cm\u2076)",
+            "iz":    "2nd Moment of Area, I<sub>z</sub> (cm\u2074)",
+            "iv":    "2nd Moment of Area, I<sub>v</sub> (cm\u2074)",
+            "rz":    "Radius of Gyration, r<sub>z</sub> (cm)",
+            "rv":    "Radius of Gyration, r<sub>v</sub> (cm)",
+            "zz":    "Elastic Modulus, Z<sub>z</sub> (cm\u00b3)",
+            "zv":    "Elastic Modulus, Z<sub>v</sub> (cm\u00b3)",
+            "zuz":   "Plastic Modulus, Z<sub>uz</sub> (cm\u00b3)",
+            "zuv":   "Plastic Modulus, Z<sub>uv</sub> (cm\u00b3)",
+            "it":    "Torsion Constant, I<sub>t</sub> (cm\u2074)",
+            "iw":    "Warping Constant, I<sub>w</sub> (cm\u2076)",
         }
 
         r = 0
